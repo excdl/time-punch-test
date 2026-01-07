@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
@@ -34,7 +34,7 @@ button:disabled {opacity:0.5;cursor:not-allowed;}
 </div>
 
 <script>
-const API_ENDPOINT="https://script.google.com/macros/s/AKfycbyKTgXQBt8hfvz72wvA7nBZFCEJOzW7_c0JQWIgEdop6ESVnx9CqyQ_7Zuc8D8MoQS2Cg/exec";
+const API_ENDPOINT="https://script.google.com/macros/s/AKfycbyAFLRJxDlidGg67V2LcFCIkJ8t5lC3LHHeCfP4HnCs9Tz7dzuUN5AfdkaES4pCaZMIsw/exec";
 let userId="", userName="", dataReady=false;
 let statusLoaded=false;
 
@@ -74,7 +74,7 @@ async function getIP(){
     const data=await res.json();
     sessionStorage.setItem("myIP", data.ip);
     return data.ip;
-  }catch{return "";} 
+  }catch{return "";}
 }
 
 /* ===== GPS 快取 ===== */
@@ -136,7 +136,10 @@ async function updateTodayRecords(){
     if(!data.length){todayRecords.innerHTML="今日打卡紀錄：無";return;}
     todayRecords.innerHTML="今日打卡紀錄：<br>";
     data.forEach(r=>{
-      todayRecords.innerHTML+=`<span>${r.status}：${r.time}（${r.company}）</span>`;
+      let color="#3498db";
+      if(r.status==="下班") color="#2ecc71";
+      if(r.company.includes("錯誤")) color="#e67e22";
+      todayRecords.innerHTML+=`<span style="border-left-color:${color}">${r.status}：${r.time}（${r.company}）</span>`;
     });
   }catch{todayRecords.innerHTML="今日打卡紀錄：讀取失敗";}
 }
@@ -145,14 +148,11 @@ async function updateTodayRecords(){
 async function sendSelfMessage(record){
   if(!liff.isInClient()) return;
 
-  // 根據打卡狀態決定顏色
   let headerColor = "#3498db"; // 上班藍
   if(record.status === "下班") headerColor = "#2ecc71"; // 下班綠
-  let reasonText = "";
-  if(record.rangeStatus !== "有效打卡區"){
-    headerColor = "#e67e22"; // 異常橘
-    reasonText = `異常原因：${record.reason || "超出打卡區"}`
-  }
+  if(record.rangeStatus !== "有效打卡區") headerColor = "#e67e22"; // 異常橘
+
+  let reasonText = record.rangeStatus !== "有效打卡區" ? "異常原因：超出打卡區" : "";
 
   try{
     await liff.sendMessages([{
@@ -186,24 +186,19 @@ async function sendSelfMessage(record){
         }
       }
     }]);
-    console.log("訊息已傳送給自己");
   }catch(err){
     console.error("訊息傳送失敗:", err);
   }
 }
 
-/* ===== 打卡功能（整合版） ===== */
+/* ===== 打卡功能 ===== */
 async function clockInOut(status){
-  if(!dataReady){
-    Swal.fire({icon:"info",title:"資料讀取中",timer:1500,showConfirmButton:false});
-    return;
-  }
-  if(!statusLoaded){
-    Swal.fire({icon:"info",title:"定位中，請稍候",timer:1500,showConfirmButton:false});
+  if(!dataReady || !statusLoaded){
+    Swal.fire({icon:"info",title:"資料讀取中或定位中",timer:1500,showConfirmButton:false});
     return;
   }
 
-  const btn = status === "上班" ? btnStart : btnEnd;
+  const btn = status==="上班"?btnStart:btnEnd;
   btn.disabled = true;
   const originalText = btn.textContent;
 
@@ -211,16 +206,16 @@ async function clockInOut(status){
   const timer = setInterval(()=>{
     btn.textContent = `打卡中… ${sec}s`;
     sec--;
-    if(sec < 0) clearInterval(timer);
-  }, 1000);
+    if(sec<0) clearInterval(timer);
+  },1000);
 
   try{
     const ip = await getIP();
     const gps = await getCachedGPS();
 
     const res = await fetch(API_ENDPOINT, {
-      method: "POST",
-      body: JSON.stringify({userId, userName, ip, gps, status})
+      method:"POST",
+      body: JSON.stringify({userId,userName,ip,gps,status})
     });
     const data = await res.json();
 
@@ -229,46 +224,37 @@ async function clockInOut(status){
       status: data.status,
       date: data.date,
       time: data.time,
-      company: statusInfo.textContent,
-      rangeStatus: data.rangeStatus,
-      reason: data.rangeStatus !== "有效打卡區" ? data.reason : ""
+      company: data.company || "未知",
+      rangeStatus: data.rangeStatus
     };
 
     if(data.rangeStatus === "有效打卡區"){
       Swal.fire({
-        icon: "success",
-        title: "🎉 打卡成功！",
-        html: `<strong>打卡時間：</strong> ${data.date} ${data.time}`,
-        showConfirmButton: false,
-        timer: 2000,
-        backdrop: "rgba(0,0,0,0.5)"
+        icon:"success",
+        title:"🎉 打卡成功！",
+        html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
       });
-      sendSelfMessage(record);
     } else {
       Swal.fire({
-        icon: "warning",
-        title: `<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
-        html: `<div style="font-size:16px;color:#3498db;font-weight:bold;margin-top:8px;">◎ 異地打卡請忽略 ◎</div>`,
-        showConfirmButton: false,
-        timer: 2000,
-        backdrop: "rgba(0,0,0,0.5)"
+        icon:"warning",
+        title:`<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
+        html:`<div style="font-size:16px;color:#3498db;font-weight:bold;margin-top:8px;">◎ 異地打卡請忽略 ◎</div>`,
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
       });
-      sendSelfMessage(record);
     }
 
+    sendSelfMessage(record);
     updateTodayRecords();
     updateStatus();
 
   }catch(err){
     console.error(err);
-    Swal.fire({
-      icon:"error",
-      title:"😥 打卡失敗",
-      html:"請查看紀錄",
-      showConfirmButton:false,
-      timer:2000,
-      backdrop:"rgba(0,0,0,0.5)"
-    });
+    Swal.fire({icon:"error",title:"😥 打卡失敗",html:"請查看紀錄",showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
   } finally {
     clearInterval(timer);
     btn.textContent = originalText;
@@ -292,6 +278,7 @@ window.onload = async()=>{
 </script>
 </body>
 </html>
+
 
 
 
