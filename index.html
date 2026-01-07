@@ -34,7 +34,7 @@ button:disabled {opacity:0.5;cursor:not-allowed;}
 </div>
 
 <script>
-const API_ENDPOINT="https://script.google.com/macros/s/AKfycbzLv3gV4fEjtNnPWX5PxbcmpWkaoxeI8LsHvxizdnFksOj_9uF7TMGBYQ00yn5O3RFZ/exec";
+const API_ENDPOINT="https://script.google.com/macros/s/AKfycby3D5dyTNfRpayaPD17AKjgAawnnvYRERACwQYu4ulH2u_zoApUlzi74gvOyBnKO2oqyQ/exec";
 let userId="", userName="", dataReady=false;
 let statusLoaded=false;
 
@@ -74,7 +74,7 @@ async function getIP(){
     const data=await res.json();
     sessionStorage.setItem("myIP", data.ip);
     return data.ip;
-  }catch{return ""; }
+  }catch{return "";}
 }
 
 /* ===== GPS 快取 ===== */
@@ -93,17 +93,12 @@ function getCachedGPS(maxAge=15000){
 
 /* ===== LIFF 使用者初始化 ===== */
 async function initUser(){
-  try{
-    await liff.init({liffId:"2008786085-L1CtKqqv"});
-    if(!liff.isLoggedIn()) await liff.login();
-    const profile = await liff.getProfile();
-    userId = profile.userId;
-    userName = profile.displayName;
-    userInfo.textContent = `${userName} 您好`;
-  }catch(err){
-    console.error("LIFF 初始化失敗:", err);
-    userInfo.textContent = "無法取得使用者資訊，請在 LINE App 內開啟";
-  }
+  await liff.init({liffId:"2008786085-L1CtKqqv"});
+  if(!liff.isLoggedIn()) await liff.login();
+  const profile=await liff.getProfile();
+  userId=profile.userId;
+  userName=profile.displayName;
+  userInfo.textContent=`${userName} 您好`;
 }
 
 /* ===== 更新打卡區狀態 ===== */
@@ -136,8 +131,8 @@ async function updateStatus(){
 async function updateTodayRecords(){
   todayRecords.innerHTML="載入中...";
   try{
-    const res = await fetch(`${API_ENDPOINT}?action=getToday&userId=${userId}&date=${getTodayString()}`);
-    const data = await res.json();
+    const res=await fetch(`${API_ENDPOINT}?action=getToday&userId=${userId}&date=${getTodayString()}`);
+    const data=await res.json();
     if(!data.length){todayRecords.innerHTML="今日打卡紀錄：無";return;}
     todayRecords.innerHTML="今日打卡紀錄：<br>";
     data.forEach(r=>{
@@ -146,19 +141,19 @@ async function updateTodayRecords(){
   }catch{todayRecords.innerHTML="今日打卡紀錄：讀取失敗";}
 }
 
-/* ===== 打卡後傳訊息給自己 ===== */
+/* ===== 打卡後發送 Flex Message 給自己 ===== */
 async function sendSelfMessage(status, time, company){
   if(!liff.isInClient()) return;
   try{
     await liff.sendMessages([{
       type:'flex',
-      altText:`${status}打卡通知`,
+      altText:'打卡成功通知',
       contents:{
         type:"bubble",
         header:{
           type:"box",
           layout:"vertical",
-          contents:[{type:"text", text:`${status}打卡通知`, weight:"bold", size:"lg", color:"#ffffff"}],
+          contents:[{type:"text", text:"打卡成功通知", weight:"bold", size:"lg", color:"#ffffff"}],
           backgroundColor:"#2ecc71",
           paddingAll:"12px"
         },
@@ -167,10 +162,9 @@ async function sendSelfMessage(status, time, company){
           layout:"vertical",
           spacing:"md",
           contents:[
-            {type:"text", text:`姓名: ${userName}`, size:"md"},
             {type:"text", text:`狀態: ${status}`, size:"md"},
             {type:"text", text:`時間: ${time}`, size:"md"},
-            {type:"text", text:`地點: ${company}`, size:"md"}
+            {type:"text", text:`公司: ${company}`, size:"md"}
           ]
         }
       }
@@ -190,7 +184,7 @@ async function clockInOut(status){
     return;
   }
 
-  const btn = status==="上班"?btnStart:btnEnd;
+  const btn = status === "上班" ? btnStart : btnEnd;
   btn.disabled = true;
   const originalText = btn.textContent;
 
@@ -201,28 +195,39 @@ async function clockInOut(status){
     const ip = await getIP();
     const gps = await getCachedGPS();
 
-    const res = await fetch(API_ENDPOINT,{
+    const res = await fetch(API_ENDPOINT, {
       method:"POST",
       body: JSON.stringify({userId,userName,ip,gps,status})
     });
     const data = await res.json();
 
-    const companyName = data.rangeStatus==="有效打卡區" ? statusInfo.textContent : "錯誤-異地請忽略";
-
     if(data.rangeStatus==="有效打卡區"){
-      Swal.fire({icon:"success",title:"🎉 打卡成功！",html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)`});
-      sendSelfMessage(data.status,data.time,companyName);
+      Swal.fire({
+        icon:"success",
+        title:"🎉 打卡成功！",
+        html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
+      });
+      // ===== 傳訊息給自己 =====
+      sendSelfMessage(data.status, data.time, statusInfo.textContent);
     } else {
-      Swal.fire({icon:"warning",title:`⚠ 打卡無效`,html:`◎ 異地打卡請忽略 ◎`,showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)`});
-      sendSelfMessage(data.status,data.time,companyName);
+      Swal.fire({
+        icon:"warning",
+        title:`<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
+        html:`<div style="font-size:16px;color:#3498db;font-weight:bold;margin-top:8px;">◎ 異地打卡請忽略 ◎</div>`,
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
+      });
     }
 
     updateTodayRecords();
     updateStatus();
 
-  }catch(err){
+  }catch{
     Swal.fire({icon:"error",title:"😥 打卡失敗",html:"請查看紀錄",showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
-    console.error(err);
   }finally{
     clearInterval(timer);
     btn.textContent = originalText;
@@ -236,20 +241,17 @@ btnEnd.onclick = () => clockInOut("下班");
 /* ===== 頁面載入 ===== */
 window.onload = async()=>{
   setButtonsLock(true);
-  try{
-    await initUser();
-  }catch(err){
-    console.warn("使用者初始化失敗:",err);
-  }
+  await initUser();
   setButtonsLock(false);
-  dataReady = true;
   updateTodayRecords();
   updateStatus();
+  dataReady = true;
   setInterval(updateStatus,15000);
 };
 </script>
 </body>
 </html>
+
 
 
 
