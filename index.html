@@ -136,9 +136,9 @@ async function updateTodayRecords(){
     if(!data.length){todayRecords.innerHTML="今日打卡紀錄：無";return;}
     todayRecords.innerHTML="今日打卡紀錄：<br>";
     data.forEach(r=>{
-      let color="#3498db";
-      if(r.status==="下班") color="#2ecc71";
-      if(r.company.includes("錯誤")) color="#e67e22";
+      let color="#3498db"; // 上班藍
+      if(r.status==="下班") color="#2ecc71"; // 下班綠
+      if(r.company.includes("錯誤")) color="#e67e22"; // 異常橘
       todayRecords.innerHTML+=`<span style="border-left-color:${color}">${r.status}：${r.time}（${r.company}）</span>`;
     });
   }catch{todayRecords.innerHTML="今日打卡紀錄：讀取失敗";}
