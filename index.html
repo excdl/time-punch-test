@@ -213,6 +213,8 @@ async function clockInOut(status){
     });
     const data = await res.json();
 
+    const companyName = data.rangeStatus === "有效打卡區" ? data.company || "未知地點" : "錯誤-異地請忽略";
+
     if(data.rangeStatus==="有效打卡區"){
       Swal.fire({
         icon:"success",
@@ -223,14 +225,13 @@ async function clockInOut(status){
         backdrop:"rgba(0,0,0,0.5)"
       });
 
-      // 成功訊息
       sendSelfMessage({
         success: true,
         userName: userName,
         status: data.status,
         date: data.date,
         time: data.time,
-        company: statusInfo.textContent
+        company: companyName
       });
 
     } else {
@@ -243,14 +244,13 @@ async function clockInOut(status){
         backdrop:"rgba(0,0,0,0.5)"
       });
 
-      // 失敗訊息
       sendSelfMessage({
         success: false,
         userName: userName,
         status: status,
         date: data.date,
         time: data.time || "",
-        company: "錯誤-異地請忽略"
+        company: companyName
       });
     }
 
