@@ -34,7 +34,7 @@ button:disabled {opacity:0.5;cursor:not-allowed;}
 </div>
 
 <script>
-const API_ENDPOINT="https://script.google.com/macros/s/AKfycbxjYshptTplL6s-YCmLrU6_Ix8KpiFvV8eD3yon9d1LfonlgFVWsyG7wDsTtWAfF5jp/exec";
+const API_ENDPOINT="https://script.google.com/macros/s/AKfycbxfLaEBQLNhUIrs6RXmW8d1TrzbyQjpKczGwAkc4LGqle1aFXbyQ_3F9WJgIuxHXC2j/exec";
 let userId="", userName="", dataReady=false;
 let statusLoaded=false;
 
@@ -107,7 +107,18 @@ async function updateStatus(){
   statusInfo.style.background = "#95a5a6";
 
   try{
-    const [ip, gps] = await Promise.all([getIP(), getCachedGPS()]);
+    const [ip, gps] = await Promise.all([
+      getIP().catch(()=>""),          
+      getCachedGPS().catch(()=>null)  
+    ]);
+
+    if(!gps){
+      statusInfo.textContent = "無法取得定位";
+      statusInfo.style.background = "#e74c3c";
+      statusLoaded = false;
+      return;
+    }
+
     const res = await fetch(`${API_ENDPOINT}?action=check&lat=${gps.lat}&lng=${gps.lng}&ip=${ip}`);
     const data = await res.json();
 
@@ -122,9 +133,10 @@ async function updateStatus(){
     statusLoaded = true;
 
   } catch(err){
-    statusInfo.textContent = "定位確認中…";
-    statusInfo.style.background = "#95a5a6";
+    statusInfo.textContent = "定位確認失敗";
+    statusInfo.style.background = "#e74c3c";
     console.warn("更新狀態失敗：", err);
+    statusLoaded = false;
   }
 }
 
@@ -133,90 +145,19 @@ async function updateTodayRecords(){
   todayRecords.innerHTML="載入中...";
   try{
     const res=await fetch(`${API_ENDPOINT}?action=getToday&userId=${userId}&date=${getTodayString()}`);
+    if(!res.ok) throw new Error("API 讀取失敗");
     const data=await res.json();
-    if(!data.length){todayRecords.innerHTML="今日打卡紀錄：無";return;}
+    if(!data || !Array.isArray(data) || data.length===0){
+      todayRecords.innerHTML="今日打卡紀錄：無";
+      return;
+    }
     todayRecords.innerHTML="今日打卡紀錄：<br>";
     data.forEach(r=>{
       todayRecords.innerHTML+=`<span>${r.status}：${r.time}（${r.company}）</span>`;
     });
-  }catch{todayRecords.innerHTML="今日打卡紀錄：讀取失敗";}
-}
-
-/* ===== 發送 Flex Message 給使用者 ===== */
-async function sendClockMessageToUser(date, time, status, company, rangeStatus, distance=null){
-  if (!liff.isApiAvailable('shareTargetPicker')) {
-    console.warn("LIFF shareTargetPicker API 不可用");
-    return;
-  }
-
-  const color = rangeStatus === "有效打卡區" ? "#2ecc71" : "#e74c3c";
-  const iconUrl = status === "上班"
-    ? "https://i.imgur.com/8QfP8Qp.png" // 上班圖示
-    : "https://i.imgur.com/xIh6cXU.png"; // 下班圖示
-
-  const flexMessage = {
-    type: "flex",
-    altText: "打卡通知",
-    contents: {
-      type: "bubble",
-      header: {
-        type: "box",
-        layout: "horizontal",
-        contents: [
-          { type: "image", url: iconUrl, size:"sm", margin:"none" },
-          { type: "text", text: `${status}打卡通知`, weight:"bold", size:"md", margin:"md" }
-        ],
-        backgroundColor: "#3498db",
-        paddingAll: "12px"
-      },
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
-        contents: [
-          {
-            type: "text",
-            text: `狀態：${status}`,
-            color: color,
-            weight:"bold"
-          },
-          {
-            type: "box",
-            layout: "baseline",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: "時間：", color: "#555555", size:"sm", flex:2 },
-              { type: "text", text: `${date} ${time}`, color:"#111111", size:"sm", flex:5 }
-            ]
-          },
-          {
-            type: "box",
-            layout: "baseline",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: "公司：", color: "#555555", size:"sm", flex:2 },
-              { type: "text", text: company, color:"#111111", size:"sm", flex:5 }
-            ]
-          },
-          ...(distance !== null ? [{
-            type: "box",
-            layout: "baseline",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: "距離：", color: "#555555", size:"sm", flex:2 },
-              { type: "text", text: `${distance} 公尺`, color:"#111111", size:"sm", flex:5 }
-            ]
-          }] : [])
-        ]
-      }
-    }
-  };
-
-  try {
-    await liff.shareTargetPicker([flexMessage]);
-    console.log("打卡訊息已傳送給自己");
-  } catch (err) {
-    console.error("分享訊息失敗：", err);
+  }catch(err){
+    todayRecords.innerHTML="今日打卡紀錄：讀取失敗";
+    console.warn("更新今日紀錄失敗", err);
   }
 }
 
@@ -249,30 +190,52 @@ async function clockInOut(status){
     });
     const data = await res.json();
 
-    Swal.fire({
-      icon: data.rangeStatus==="有效打卡區" ? "success" : "warning",
-      title: data.rangeStatus==="有效打卡區" ? "🎉 打卡成功！" : "⚠ 打卡無效",
-      html: `<strong>打卡時間：</strong> ${data.date} ${data.time}<br>公司：${data.company}${data.distance!==null? `<br>距離：${data.distance} 公尺` : ""}`,
-      showConfirmButton:false,
-      timer:2000,
-      backdrop:"rgba(0,0,0,0.5)"
-    });
-
-    // 傳 Flex Message 給自己
-    sendClockMessageToUser(
-      data.date,
-      data.time,
-      data.status,
-      data.company,
-      data.rangeStatus,
-      data.distance
-    );
+    if(data.rangeStatus==="有效打卡區"){
+      Swal.fire({
+        icon:"success",
+        title:"🎉 打卡成功！",
+        html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
+      });
+      // Flex Message 範例
+      if(liff.isApiAvailable('shareTargetPicker')){
+        const flexMessage = {
+          type: 'flex',
+          altText: '今日打卡紀錄',
+          contents: {
+            type: 'bubble',
+            body: {
+              type: 'box',
+              layout: 'vertical',
+              contents: [
+                { type: 'text', text: `${status}打卡成功！`, weight: 'bold', size: 'lg', color:'#2ecc71' },
+                { type: 'text', text: `時間：${data.date} ${data.time}`, size:'sm' },
+                { type: 'text', text: `狀態：${data.rangeStatus}`, size:'sm' }
+              ]
+            }
+          }
+        };
+        liff.shareTargetPicker([flexMessage]).catch(console.error);
+      }
+    } else {
+      Swal.fire({
+        icon:"warning",
+        title:`<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
+        html:`<div style="font-size:16px;color:#3498db;font-weight:bold;margin-top:8px;">◎ 異地打卡請忽略 ◎</div>`,
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
+      });
+    }
 
     updateTodayRecords();
     updateStatus();
 
-  }catch{
-    Swal.fire({icon:"error",title:"😥 打卡失敗",html:"請查看紀錄",showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
+  }catch(err){
+    Swal.fire({icon:"error",title:"😥 打卡失敗",html:"請查看紀錄",showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5")});
+    console.warn(err);
   }finally{
     clearInterval(timer);
     btn.textContent = originalText;
@@ -286,16 +249,17 @@ btnEnd.onclick = () => clockInOut("下班");
 /* ===== 頁面載入 ===== */
 window.onload = async()=>{
   setButtonsLock(true);
-  await initUser();
-  setButtonsLock(false);
-  updateTodayRecords();
-  updateStatus();
+  await initUser();         // 顯示姓名
+  setButtonsLock(false);    // 啟用按鈕
+  updateTodayRecords();     // 更新今日紀錄
+  updateStatus();           // 更新狀態
   dataReady = true;
-  setInterval(updateStatus,15000);
+  setInterval(updateStatus,15000); // 15秒更新狀態
 };
 </script>
 </body>
 </html>
+
 
 
 
