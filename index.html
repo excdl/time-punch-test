@@ -34,7 +34,7 @@ button:disabled {opacity:0.5;cursor:not-allowed;}
 </div>
 
 <script>
-const API_ENDPOINT="https://script.google.com/macros/s/AKfycbxfLaEBQLNhUIrs6RXmW8d1TrzbyQjpKczGwAkc4LGqle1aFXbyQ_3F9WJgIuxHXC2j/exec";
+const API_ENDPOINT="https://script.google.com/macros/s/AKfycbwObCmwIiUgqwBKrcOkbk00DTf5nnv0e5VlNDcVWxlZQV2_y_Cq49Vh3OXImQjlmDhK/exec";
 let userId="", userName="", dataReady=false;
 let statusLoaded=false;
 
@@ -107,18 +107,7 @@ async function updateStatus(){
   statusInfo.style.background = "#95a5a6";
 
   try{
-    const [ip, gps] = await Promise.all([
-      getIP().catch(()=>""),          
-      getCachedGPS().catch(()=>null)  
-    ]);
-
-    if(!gps){
-      statusInfo.textContent = "無法取得定位";
-      statusInfo.style.background = "#e74c3c";
-      statusLoaded = false;
-      return;
-    }
-
+    const [ip, gps] = await Promise.all([getIP(), getCachedGPS()]);
     const res = await fetch(`${API_ENDPOINT}?action=check&lat=${gps.lat}&lng=${gps.lng}&ip=${ip}`);
     const data = await res.json();
 
@@ -130,13 +119,12 @@ async function updateStatus(){
       const distText = data.distance !== null ? ` (${data.distance} 公尺)` : "";
       statusInfo.textContent = "無效打卡區" + distText;
     }
-    statusLoaded = true;
 
+    statusLoaded = true;
   } catch(err){
-    statusInfo.textContent = "定位確認失敗";
-    statusInfo.style.background = "#e74c3c";
+    statusInfo.textContent = "定位確認中…";
+    statusInfo.style.background = "#95a5a6";
     console.warn("更新狀態失敗：", err);
-    statusLoaded = false;
   }
 }
 
@@ -145,19 +133,40 @@ async function updateTodayRecords(){
   todayRecords.innerHTML="載入中...";
   try{
     const res=await fetch(`${API_ENDPOINT}?action=getToday&userId=${userId}&date=${getTodayString()}`);
-    if(!res.ok) throw new Error("API 讀取失敗");
     const data=await res.json();
-    if(!data || !Array.isArray(data) || data.length===0){
-      todayRecords.innerHTML="今日打卡紀錄：無";
-      return;
-    }
+    if(!data.length){todayRecords.innerHTML="今日打卡紀錄：無";return;}
     todayRecords.innerHTML="今日打卡紀錄：<br>";
     data.forEach(r=>{
       todayRecords.innerHTML+=`<span>${r.status}：${r.time}（${r.company}）</span>`;
     });
-  }catch(err){
-    todayRecords.innerHTML="今日打卡紀錄：讀取失敗";
-    console.warn("更新今日紀錄失敗", err);
+  }catch{todayRecords.innerHTML="今日打卡紀錄：讀取失敗";}
+}
+
+/* ===== 發送 Flex Message ===== */
+async function sendFlexMessage(record){
+  if(!liff.isInClient()) return; // LIFF 客戶端才可發送
+  const flexContent = {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: [
+        { type: "text", text: "打卡成功 🕒", weight: "bold", size: "lg", color: "#1E90FF" },
+        { type: "separator", margin:"sm" },
+        { type: "text", text: `姓名：${record.userName}`, size:"md", margin:"sm" },
+        { type: "text", text: `狀態：${record.status}`, size:"md", margin:"sm" },
+        { type: "text", text: `時間：${record.date} ${record.time}`, size:"md", margin:"sm" },
+        { type: "text", text: `地點：${record.company}`, size:"md", margin:"sm" }
+      ]
+    }
+  };
+
+  try{
+    await liff.sendMessages([{ type:"flex", altText:"打卡成功", contents:flexContent }]);
+    console.log("Flex Message 已發送");
+  } catch(err){
+    console.error("Flex Message 發送失敗:", err);
   }
 }
 
@@ -190,52 +199,29 @@ async function clockInOut(status){
     });
     const data = await res.json();
 
+    // SweetAlert 提示
     if(data.rangeStatus==="有效打卡區"){
-      Swal.fire({
-        icon:"success",
-        title:"🎉 打卡成功！",
-        html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,
-        showConfirmButton:false,
-        timer:2000,
-        backdrop:"rgba(0,0,0,0.5)"
+      Swal.fire({icon:"success",title:"🎉 打卡成功！",html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
+
+      // 發送單筆 Flex Message
+      await sendFlexMessage({
+        userName,
+        status,
+        date:data.date,
+        time:data.time,
+        company:data.company // 打卡位置名稱
       });
-      // Flex Message 範例
-      if(liff.isApiAvailable('shareTargetPicker')){
-        const flexMessage = {
-          type: 'flex',
-          altText: '今日打卡紀錄',
-          contents: {
-            type: 'bubble',
-            body: {
-              type: 'box',
-              layout: 'vertical',
-              contents: [
-                { type: 'text', text: `${status}打卡成功！`, weight: 'bold', size: 'lg', color:'#2ecc71' },
-                { type: 'text', text: `時間：${data.date} ${data.time}`, size:'sm' },
-                { type: 'text', text: `狀態：${data.rangeStatus}`, size:'sm' }
-              ]
-            }
-          }
-        };
-        liff.shareTargetPicker([flexMessage]).catch(console.error);
-      }
     } else {
-      Swal.fire({
-        icon:"warning",
-        title:`<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
+      Swal.fire({icon:"warning",title:`<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
         html:`<div style="font-size:16px;color:#3498db;font-weight:bold;margin-top:8px;">◎ 異地打卡請忽略 ◎</div>`,
-        showConfirmButton:false,
-        timer:2000,
-        backdrop:"rgba(0,0,0,0.5)"
-      });
+        showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
     }
 
     updateTodayRecords();
     updateStatus();
 
-  }catch(err){
-    Swal.fire({icon:"error",title:"😥 打卡失敗",html:"請查看紀錄",showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5")});
-    console.warn(err);
+  }catch{
+    Swal.fire({icon:"error",title:"😥 打卡失敗",html:"請查看紀錄",showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
   }finally{
     clearInterval(timer);
     btn.textContent = originalText;
@@ -249,17 +235,16 @@ btnEnd.onclick = () => clockInOut("下班");
 /* ===== 頁面載入 ===== */
 window.onload = async()=>{
   setButtonsLock(true);
-  await initUser();         // 顯示姓名
-  setButtonsLock(false);    // 啟用按鈕
-  updateTodayRecords();     // 更新今日紀錄
-  updateStatus();           // 更新狀態
+  await initUser();
+  setButtonsLock(false);
+  updateTodayRecords();
+  updateStatus();
   dataReady = true;
-  setInterval(updateStatus,15000); // 15秒更新狀態
+  setInterval(updateStatus,15000);
 };
 </script>
 </body>
 </html>
-
 
 
 
