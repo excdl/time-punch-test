@@ -142,31 +142,30 @@ async function updateTodayRecords(){
   }catch{todayRecords.innerHTML="今日打卡紀錄：讀取失敗";}
 }
 
-/* ===== 發送 Flex Message ===== */
+/* ===== 發送單筆 Flex Message ===== */
 async function sendFlexMessage(record){
-  if(!liff.isInClient()) return; // LIFF 客戶端才可發送
-  const flexContent = {
-    type: "bubble",
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "md",
-      contents: [
-        { type: "text", text: "打卡成功 🕒", weight: "bold", size: "lg", color: "#1E90FF" },
-        { type: "separator", margin:"sm" },
-        { type: "text", text: `姓名：${record.userName}`, size:"md", margin:"sm" },
-        { type: "text", text: `狀態：${record.status}`, size:"md", margin:"sm" },
-        { type: "text", text: `時間：${record.date} ${record.time}`, size:"md", margin:"sm" },
-        { type: "text", text: `地點：${record.company}`, size:"md", margin:"sm" }
-      ]
-    }
-  };
-
   try{
-    await liff.sendMessages([{ type:"flex", altText:"打卡成功", contents:flexContent }]);
+    await liff.sendMessages([{
+      type: "flex",
+      altText: "打卡通知 🛠️",
+      contents: {
+        type: "bubble",
+        body: {
+          type: "box",
+          layout: "vertical",
+          spacing: "md",
+          contents:[
+            {type:"text",text:`${record.userName} 已打卡`,weight:"bold",size:"lg"},
+            {type:"text",text:`狀態：${record.status}`,size:"md"},
+            {type:"text",text:`時間：${record.date} ${record.time}`,size:"md"},
+            {type:"text",text:`位置：${record.company}`,size:"md"}
+          ]
+        }
+      }
+    }]);
     console.log("Flex Message 已發送");
   } catch(err){
-    console.error("Flex Message 發送失敗:", err);
+    console.error("Flex Message 發送失敗：", err);
   }
 }
 
@@ -176,7 +175,6 @@ async function clockInOut(status){
     Swal.fire({icon:"info",title:"資料讀取中",timer:1500,showConfirmButton:false});
     return;
   }
-
   if(!statusLoaded){
     Swal.fire({icon:"info",title:"定位中，請稍候",timer:1500,showConfirmButton:false});
     return;
@@ -199,23 +197,35 @@ async function clockInOut(status){
     });
     const data = await res.json();
 
-    // SweetAlert 提示
+    // 彈跳提示
     if(data.rangeStatus==="有效打卡區"){
-      Swal.fire({icon:"success",title:"🎉 打卡成功！",html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
-
-      // 發送單筆 Flex Message
-      await sendFlexMessage({
-        userName,
-        status,
-        date:data.date,
-        time:data.time,
-        company:data.company // 打卡位置名稱
+      Swal.fire({
+        icon:"success",
+        title:"🎉 打卡成功！",
+        html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`,
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
       });
     } else {
-      Swal.fire({icon:"warning",title:`<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
+      Swal.fire({
+        icon:"warning",
+        title:`<span style="font-size:20px;color:#e67e22;">⚠ 打卡無效</span>`,
         html:`<div style="font-size:16px;color:#3498db;font-weight:bold;margin-top:8px;">◎ 異地打卡請忽略 ◎</div>`,
-        showConfirmButton:false,timer:2000,backdrop:"rgba(0,0,0,0.5)"});
+        showConfirmButton:false,
+        timer:2000,
+        backdrop:"rgba(0,0,0,0.5)"
+      });
     }
+
+    // 發送單筆 Flex Message
+    await sendFlexMessage({
+      userName,
+      status,
+      date: data.date,
+      time: data.time,
+      company: statusInfo.textContent
+    });
 
     updateTodayRecords();
     updateStatus();
@@ -229,6 +239,7 @@ async function clockInOut(status){
   }
 }
 
+/* ===== 按鈕綁定 ===== */
 btnStart.onclick = () => clockInOut("上班");
 btnEnd.onclick = () => clockInOut("下班");
 
